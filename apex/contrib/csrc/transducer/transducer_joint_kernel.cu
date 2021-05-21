@@ -590,12 +590,13 @@ torch::Tensor transducer_joint_cuda_forward(
     // Simple heuristics
     const int numThread = std::min(128, (static_cast<int>(hiddenSize)+C10_WARP_SIZE-1)
                                         / C10_WARP_SIZE * C10_WARP_SIZE);
-    AT_DISPATCH_FLOATING_TYPES_AND_HALF(dtype, "transducer_joint_forward", ([&] {
-        if (opt == 0){
-            // vanilla kernel
-            const int threads = numThread;
-            const dim3 blocks(maxGLen, maxFLen, batchSize);
+    
+    if (opt == 0){
+        // vanilla kernel
+        const int threads = numThread;
+        const dim3 blocks(maxGLen, maxFLen, batchSize);
 
+        AT_DISPATCH_FLOATING_TYPES_AND_HALF(dtype, "transducer_joint_forward", ([&] {
             transducer_joint_forward<scalar_t, OffsetCalFwd>
             <<<blocks, threads, 0, stream>>>(
                 f.data_ptr<scalar_t>(), 
@@ -608,42 +609,52 @@ torch::Tensor transducer_joint_cuda_forward(
                 hiddenSize,
                 packOutput,
                 sum.data_ptr<scalar_t>());
-        }
-        if (opt == 1){
-            // tiled version. For simplicity, assume tileF == tileG, even though the kernel can 
-            // support more general cases.
-            const int threads = numThread;
-            const int hiddenPerBlock = numThread;
-            const int hiddenBlock = (hiddenSize + hiddenPerBlock - 1) / hiddenPerBlock;
-            const dim3 blocks(  (maxGLen+tileSize-1)/tileSize * hiddenBlock, 
-                                (maxFLen+tileSize-1)/tileSize, 
-                                batchSize);
+        }));  
+    }
+    if (opt == 1){
+        // tiled version. For simplicity, assume tileF == tileG, even though the kernel can 
+        // support more general cases.
+        const int threads = numThread;
+        const int hiddenPerBlock = numThread;
+        const int hiddenBlock = (hiddenSize + hiddenPerBlock - 1) / hiddenPerBlock;
+        const dim3 blocks(  (maxGLen+tileSize-1)/tileSize * hiddenBlock, 
+                            (maxFLen+tileSize-1)/tileSize, 
+                            batchSize);
 
-            TORCH_CHECK(tileSize == 1 or tileSize == 2 or tileSize == 4, 
-                "Expected tileSize to be in [1, 2, 4], but got ", tileSize);
-            switch (tileSize) {
-                #define LAUNCH_TRANSDUCER_JOINT_TILED_FORWARD(tile) case tile:\
-                    transducer_joint_tiled_forward<scalar_t, tile, tile, OffsetCalFwd>\
-                    <<<blocks, threads, 0, stream>>>(\
-                        f.data_ptr<scalar_t>(),\
-                        g.data_ptr<scalar_t>(),\
-                        fLen.data_ptr<int>(),\
-                        gLen.data_ptr<int>(),\
-                        batchOffsetPtr,\
-                        maxFLen,\
-                        maxGLen,\
-                        hiddenSize,\
-                        hiddenPerBlock,\
-                        packOutput,\
-                        sum.data_ptr<scalar_t>());\
+        TORCH_CHECK(tileSize == 1 or tileSize == 2 or tileSize == 4, 
+            "Expected tileSize to be in [1, 2, 4], but got ", tileSize);
+
+        AT_DISPATCH_FLOATING_TYPES_AND_HALF(dtype, "transducer_joint_forward", ([&] {
+            void(*kernel)(const scalar_t*, const scalar_t*, const int*, const int*, const int64_t*, int64_t, int64_t, 
+                            int64_t, int64_t, bool, scalar_t*);
+
+            switch (tileSize){
+                case 1:
+                    kernel = &transducer_joint_tiled_forward<scalar_t, 1, 1, OffsetCalFwd>;
                     break;
-                LAUNCH_TRANSDUCER_JOINT_TILED_FORWARD(1);
-                LAUNCH_TRANSDUCER_JOINT_TILED_FORWARD(2);
-                LAUNCH_TRANSDUCER_JOINT_TILED_FORWARD(4);
+                case 2:
+                    kernel = &transducer_joint_tiled_forward<scalar_t, 2, 2, OffsetCalFwd>;
+                    break;
+                case 4:
+                    kernel = &transducer_joint_tiled_forward<scalar_t, 4, 4, OffsetCalFwd>;
+                    break;
             }
-
-        }
-    }));   
+            
+            kernel<<<blocks, threads, 0, stream>>>(
+                f.data_ptr<scalar_t>(),
+                g.data_ptr<scalar_t>(),
+                fLen.data_ptr<int>(),
+                gLen.data_ptr<int>(),
+                batchOffsetPtr,
+                maxFLen,
+                maxGLen,
+                hiddenSize,
+                hiddenPerBlock,
+                packOutput,
+                sum.data_ptr<scalar_t>());
+        })); 
+    }
+ 
     THCudaCheck(cudaGetLastError());
     return sum;
 }
