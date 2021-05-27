@@ -246,7 +246,7 @@ __global__ void transducer_joint_tiled_forward(
     scalar_t *sum,
     uint8_t *mask) {
 
-    static_assert(U == 2, "U has to be 4, as random numbers are generated in batch of 4");
+    static_assert(U == 4, "U has to be 4, as random numbers are generated in batch of 4");
 
     const int batch = blockIdx.z;
     const int t = blockIdx.y * tileF;
@@ -310,7 +310,7 @@ __global__ void transducer_joint_tiled_forward(
                         if (masked){
                             // Apply ReLU here when relu is True
                             bool localMask = relu ? (out>0) : 1;
-                            localMask = dropout ? localMask & dropoutMask[idx/U] : localMask;
+                            localMask = dropout ? localMask & dropoutMask[idx%U] : localMask;
                             out = dropout ? out*localMask*scale : out*localMask;
                             myMask[i*strideF + j*hiddenSize + h] = static_cast<uint8_t>(localMask);
                         }
@@ -750,23 +750,23 @@ std::vector<torch::Tensor> transducer_joint_cuda_forward(
             if (masked){
                 switch (tileSize){
                     case 2:
-                        kernel = &transducer_joint_tiled_forward<scalar_t, 2, 2, 2, OffsetCalFwd, true>;
+                        kernel = &transducer_joint_tiled_forward<scalar_t, 2, 2, 4, OffsetCalFwd, true>;
                         break;
                     case 4:
-                        kernel = &transducer_joint_tiled_forward<scalar_t, 4, 4, 2, OffsetCalFwd, true>;
+                        kernel = &transducer_joint_tiled_forward<scalar_t, 4, 4, 4, OffsetCalFwd, true>;
                         break;
                 }
             }
             else{
                 switch (tileSize){
                     case 1:
-                        kernel = &transducer_joint_tiled_forward<scalar_t, 1, 1, 2, OffsetCalFwd, false>;
+                        kernel = &transducer_joint_tiled_forward<scalar_t, 1, 1, 4, OffsetCalFwd, false>;
                         break;
                     case 2:
-                        kernel = &transducer_joint_tiled_forward<scalar_t, 2, 2, 2, OffsetCalFwd, false>;
+                        kernel = &transducer_joint_tiled_forward<scalar_t, 2, 2, 4, OffsetCalFwd, false>;
                         break;
                     case 4:
-                        kernel = &transducer_joint_tiled_forward<scalar_t, 4, 4, 2, OffsetCalFwd, false>;
+                        kernel = &transducer_joint_tiled_forward<scalar_t, 4, 4, 4, OffsetCalFwd, false>;
                         break;
                 }
             }

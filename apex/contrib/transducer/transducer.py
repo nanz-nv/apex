@@ -16,11 +16,12 @@ class TransducerJoint(torch.nn.Module):
         ignored if opt != 1. (default: 4) 
     """
 
-    def __init__(self, pack_output=False, relu=False, dropout=False, opt=1, fwd_tile_size=4, probe_mask=False):
+    def __init__(self, pack_output=False, relu=False, dropout=False, opt=1, fwd_tile_size=4, dropout_prob=0, probe_mask=False):
         super(TransducerJoint, self).__init__() 
         self.pack_output = pack_output
         self.relu = relu
         self.dropout = dropout
+        self.dropout_prob = dropout_prob
         self.opt = opt
         self.fwd_tile_size = fwd_tile_size
         self.dummy_batch_offset = torch.empty(0)
@@ -30,7 +31,7 @@ class TransducerJoint(torch.nn.Module):
             raise NotImplementedError("ReLU and dropout fusion is only supported with opt=1")
 
 
-    def forward(self, f, g, f_len, g_len, batch_offset=None, packed_batch=0, dropout_prob=0):
+    def forward(self, f, g, f_len, g_len, batch_offset=None, packed_batch=0):
         """Forward operation of transducer joint
 
         Arguments:
@@ -49,8 +50,9 @@ class TransducerJoint(torch.nn.Module):
         my_batch_offset = batch_offset if self.pack_output else self.dummy_batch_offset
         if self.pack_output and (batch_offset is None or packed_batch == 0):
             raise Exception("Please specify batch_offset and packed_batch when packing is enabled")
-        return TransducerJointFunc.apply(f, g, f_len, g_len, self.pack_output, self.relu, self.dropout, my_batch_offset, 
-                                            packed_batch, self.opt, self.fwd_tile_size, dropout_prob, self.mask_probe)
+        dropout =  self.dropout and self.training    # only dropout for training
+        return TransducerJointFunc.apply(f, g, f_len, g_len, self.pack_output, self.relu, dropout, my_batch_offset, 
+                                            packed_batch, self.opt, self.fwd_tile_size, self.dropout_prob, self.mask_probe)
 
 
 class TransducerLoss(torch.nn.Module):

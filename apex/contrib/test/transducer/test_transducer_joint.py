@@ -71,13 +71,12 @@ class TransducerJointTest(unittest.TestCase):
         f_ref.requires_grad = True
         g_ref.requires_grad = True
         
-        my_joint = TransducerJoint(pack_output=pack_output, relu=relu, dropout=dropout, probe_mask=True)
+        my_joint = TransducerJoint(pack_output=pack_output, relu=relu, dropout=dropout, dropout_prob=self.dropout_prob, probe_mask=True)
         if not pack_output:
             h_tst = my_joint(   f=self.f_tst, 
                                 g=self.g_tst, 
                                 f_len=self.f_len, 
-                                g_len=self.g_len,
-                                dropout_prob=self.dropout_prob)
+                                g_len=self.g_len)
             h_tst.backward(self.h_grad)
             if dropout:
                 mask = my_joint.mask_probe[0]
@@ -88,8 +87,7 @@ class TransducerJointTest(unittest.TestCase):
                                 f_len=self.f_len, 
                                 g_len=self.g_len, 
                                 batch_offset=batch_offset, 
-                                packed_batch=batch_offset[-1],
-                                dropout_prob=self.dropout_prob)
+                                packed_batch=batch_offset[-1])
             h_tst.backward(self.h_grad_packed)
             if dropout:
                 mask_packed = my_joint.mask_probe[0]
@@ -150,6 +148,7 @@ class TransducerJointTest(unittest.TestCase):
 
     def test_transducer_joint_vec_pack_relu_dropout(self):
         self.run_transducer_joint(for_vector_kernel=True, pack_output=True, relu=True, dropout=True)
+
 
 
 if __name__ == '__main__':
