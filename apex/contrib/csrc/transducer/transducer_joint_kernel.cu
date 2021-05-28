@@ -269,7 +269,7 @@ __global__ void transducer_joint_tiled_forward(
     // The following code is only needed for dropout. We try to by pass them as much as possible.
     auto seeds = masked ? at::cuda::philox::unpack(philoxArgs) 
                             : std::make_tuple(static_cast<uint64_t>(0), static_cast<uint64_t>(0));
-    uint64_t tid = masked ? (static_cast<uint64_t>(blockIdx.z)*gridDim.y*gridDim.x*blockDim.x + 
+    uint64_t tid = masked ? (static_cast<uint64_t>(blockIdx.z)*gridDim.y*gridDim.x + 
                         blockIdx.y*gridDim.x + blockIdx.x) * blockDim.x + threadIdx.x
                             : 0;
     Philox ph(std::get<0>(seeds), tid, std::get<1>(seeds)); 
